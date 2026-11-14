@@ -30,15 +30,48 @@
                         :lang lang}
                        (select-keys source [:strip :exclude :vars])))))
 
+(defn- link-ids
+  "Class ids that `spec` names: an id, or a `prefix.*` pattern for every
+  class under that prefix."
+  [classes spec]
+  (let [s (name (keyword spec))]
+    (if (str/ends-with? s ".*")
+      (let [p (subs s 0 (dec (count s)))]
+        (vec (for [c classes :let [id (name (:id c))]
+                   :when (and (not (:foreign c)) (str/starts-with? id p))]
+               (:id c))))
+      (vec (for [c classes :when (= s (name (:id c)))] (:id c))))))
+
+(defn with-links
+  "Add the policy `:links` ([from to] pairs of ids, or `prefix.*`) as
+  `:dependency` edges: relations no source scan can see, such as a service
+  and the infrastructure that provisions it. A link that names nothing is
+  reported on stderr."
+  [policy graph]
+  (let [classes (:classes graph)
+        edges (for [[from to] (:links policy)
+                    :let [froms (link-ids classes from) tos (link-ids classes to)]
+                    :when (or (and (seq froms) (seq tos))
+                              (binding [*out* *err*]
+                                (println "Link matches nothing:" from "->" to)
+                                false))
+                    f froms t tos
+                    :when (not= f t)]
+                {:from f :to t :kind :dependency})]
+    (update graph :edges #(vec (distinct (concat % edges))))))
+
 (defn scan-policy
   "Scan `policy`. `:sources` merges one scanner per entry.
-  Otherwise `graph-impl` scans `:src` with the policy prefix."
+  Otherwise `graph-impl` scans `:src` with the policy prefix. `:links` add
+  declared edges."
   [graph-impl policy]
-  (if (seq (:sources policy))
-    (graph/merge-scans (mapv #(scan-source policy %) (:sources policy)))
-    (graph/scan graph-impl
-                (or (:src policy) "src")
-                {:prefix (or (:prefix policy) "uml-viewer")})))
+  (with-links
+    policy
+    (if (seq (:sources policy))
+      (graph/merge-scans (mapv #(scan-source policy %) (:sources policy)))
+      (graph/scan graph-impl
+                  (or (:src policy) "src")
+                  {:prefix (or (:prefix policy) "uml-viewer")}))))
 
 (defn document
   "Scan source with `graph-impl` and apply `policy`. Returns the IR document.

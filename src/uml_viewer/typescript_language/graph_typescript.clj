@@ -11,16 +11,28 @@
   (or (str/ends-with? name ".d.ts")
       (re-find #"\.(?:test|spec)\.[cm]?[jt]sx?$" name)))
 
-(defn- source-files [root]
-  (let [root (.getCanonicalFile (io/file root))]
-    (->> (file-seq root)
-         (remove (fn [f]
-                   (re-find #"/node_modules/|/dist/|/target/"
-                            (str/replace (str f) #"\\" "/"))))
-         (filter #(.isFile %))
-         (filter #(re-find #"\.[cm]?[jt]sx?$" (.getName %)))
-         (remove #(excluded-name? (.getName %)))
-         (sort-by #(.getPath %)))))
+(defn- skipped-dir?
+  "Dependency, build output and dot directories are never scanned; `exclude`
+  lists further directories relative to the root (`docs-site`, `e2e`)."
+  [root exclude ^java.io.File dir]
+  (let [name (.getName dir)
+        rel (str/replace (str (.relativize (.toPath root) (.toPath dir))) #"\\" "/")]
+    (and (not= dir root)
+         (or (#{"node_modules" "dist" "target"} name)
+             (str/starts-with? name ".")
+             (contains? (set exclude) rel)))))
+
+(defn- source-files
+  ([root] (source-files root nil))
+  ([root exclude]
+   (let [root (.getCanonicalFile (io/file root))]
+     (->> (tree-seq (fn [^java.io.File f] (and (.isDirectory f) (not (skipped-dir? root exclude f))))
+                    (fn [^java.io.File d] (vec (.listFiles d)))
+                    root)
+          (filter #(.isFile ^java.io.File %))
+          (filter #(re-find #"\.[cm]?[jt]sx?$" (.getName ^java.io.File %)))
+          (remove #(excluded-name? (.getName ^java.io.File %)))
+          (sort-by #(.getPath ^java.io.File %))))))
 
 (def ^:private regex-keywords
   #{"return" "throw" "case" "void" "typeof" "delete"
@@ -383,6 +395,15 @@
        :names (vec (concat (brace-names stmt)
                            (keep identity [(default-binding stmt) (star-binding stmt)])))})))
 
+(defn- route-invokes
+  "Normalised `/api/...` and `/internal/...` paths named in string literals,
+  also after a template variable (`${API_BASE_URL}/api/x`), so a UI module
+  links to the controller that serves them."
+  [text]
+  (->> (re-seq #"[\"'`}](/(?:api|internal)/[^\"'`\s]*)" text)
+       (keep (comp graph/normalize-route second))
+       distinct))
+
 (defn read-module
   "Module surface of TypeScript `source`: import specs, exported names,
   type annotations on those exports, and invoke(\"name\") calls."
@@ -392,7 +413,7 @@
         exports (keep #(export-fact text %) (line-starts text holes "export"))]
     {:imports (vec imports)
      :exports (vec exports)
-     :invokes (vec (distinct (invokes-of text holes)))}))
+     :invokes (vec (distinct (concat (invokes-of text holes) (route-invokes text))))}))
 
 (defn- module-relative [file root]
   (let [root (.getCanonicalFile (io/file root))
@@ -482,7 +503,7 @@
   (scan [_ root opts]
     (let [prefix (or (:prefix opts) "app")
           ns-prefix (or (:ns-prefix opts) prefix)
-          files (source-files root)
+          files (source-files root (:exclude opts))
           path->id (into {}
                          (map (fn [file]
                                 (let [ns-str (graph/ns-join ns-prefix (module-relative file root))]

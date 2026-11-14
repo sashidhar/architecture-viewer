@@ -81,3 +81,24 @@
           _ (spit-file b "com/acme/b/B.java" "package com.acme.b;\nclass B {}\n")
           g (graph/scan java/impl [a b] {:prefix "app" :ns-prefix "app" :strip "com"})]
       (should (contains? (edge-set g) [:acme.a.A :acme.b.B :dependency])))))
+
+(describe "spring routes"
+  (it "joins class and method mappings and normalises variables"
+    (should= ["/api/projects/{}" "/api/projects/{}/stop" "/api/projects"]
+             (java/routes-of
+               (str "package a;\n@RestController\n@RequestMapping(\"/api/projects\")\nclass C {\n"
+                    "  @GetMapping(\"/{id}\") void a() {}\n"
+                    "  @PostMapping(value = \"/{projectId}/stop\", produces = \"application/json\") void b() {}\n"
+                    "  @GetMapping void c() {}\n}\n"))))
+
+  (it "has no routes without method mappings"
+    (should= [] (java/routes-of "package a;\n@RequestMapping(\"/x\")\nclass C {}\n")))
+
+  (it "links a controller to a TypeScript caller through merge-scans"
+    (let [root (temp-root)
+          _ (spit-file root "a/Ctl.java" "package a;\n@RequestMapping(\"/api\")\nclass Ctl { @GetMapping(\"/p/{id}\") void x() {} }\n")
+          g (graph/scan java/impl root {:prefix "app" :ns-prefix "app" :strip ""})
+          ts {:classes [{:id :ui.page}] :edges []
+              :invokes {:ui.page [(graph/normalize-route "/api/p/${id}?x=1")]}}
+          merged (graph/merge-scans [g ts])]
+      (should (contains? (edge-set merged) [:ui.page :a.Ctl :dependency])))))

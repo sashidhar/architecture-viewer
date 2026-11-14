@@ -152,6 +152,21 @@
       (= (.charAt ^String source j) quote) (inc j)
       :else (recur (inc j) false))))
 
+(defn normalize-route
+  "Comparable form of an HTTP route: `?query` cut, `${x}` and `{x}` path
+  variables both `{}`, a trailing variable glued to a word (`/git${suffix}`)
+  dropped, no trailing slash, leading slash. nil when nothing is left."
+  [route]
+  (let [r (-> (str route)
+              (str/replace #"\?.*$" "")
+              (str/replace #"\$\{[^}]*\}" "{}")
+              (str/replace #"\{[^}/]*\}" "{}")
+              (str/replace #"([^/])\{\}$" "$1")
+              (str/replace #"/+" "/")
+              (str/replace #"/$" ""))]
+    (when-not (str/blank? r)
+      (if (str/starts-with? r "/") r (str "/" r)))))
+
 (defn merge-scans
   "Combine language scans into one graph.
   Each scan is `{:classes :edges :commands :invokes}`.
@@ -172,16 +187,17 @@
                             (or (first (remove :foreign cs))
                                 (first cs))))
                         (distinct (map :id classes)))
-          owners (into {}
-                       (for [scan scans
-                             [id cmds] (:commands scan)
-                             cmd cmds]
-                         [cmd id]))
+          owners (reduce (fn [m [cmd id]] (update m cmd (fnil conj #{}) id))
+                         {}
+                         (for [scan scans
+                               [id cmds] (:commands scan)
+                               cmd cmds]
+                           [cmd id]))
           linked (for [scan scans
                        [id names] (:invokes scan)
                        name names
-                       :let [to (get owners name)]
-                       :when (and to (not= to id))]
+                       to (get owners name)
+                       :when (not= to id)]
                    {:from id :to to :kind :dependency})
           edges (->> (concat (mapcat :edges scans) linked)
                      distinct

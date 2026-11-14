@@ -406,7 +406,8 @@ repo with Go under the root and Babashka scripts under `bb`:
 | `:omit-edges` | Drop `[from to]` |
 | `:lang` | Scanner when `:sources` is absent (default `:clojure`) |
 | `:src` | Source root when `:sources` is absent |
-| `:sources` | One scan per `{:lang :root :prefix?}`. The entry `:prefix` is that tree's namespace root. Java also takes `:strip`, Terraform `:vars` |
+| `:sources` | One scan per `{:lang :root :prefix?}`. The entry `:prefix` is that tree's namespace root. Java also takes `:strip`, TypeScript `:exclude`, Terraform `:vars` |
+| `:links` | Declared `[from to]` dependency edges between ids (or `prefix.*`), for relations a scan cannot see |
 | `:foreign` | External libs as ovals. A listed prefix collapses `quil.core` to `quil`. Unlisted externals are dropped |
 
 **Viewer Grok loop** (passed with `--rules` to the companion session only)
@@ -638,6 +639,20 @@ set `:vars true` on the source entry to include them. A resource type
 `aws_ecs_service` links its file to the foreign `aws.ecs`; list the
 `:foreign` prefixes you want to see (`aws.ecs`, `aws.s3`, or just `aws`).
 Comments and `description` strings are ignored.
+
+**Cross-language links.** A TypeScript module that names an HTTP route in a
+string (`${API_BASE_URL}/api/projects/${id}/files`) depends on the Java
+controller that serves it (class-level `@RequestMapping` joined with the
+method-level `@GetMapping`/`@PostMapping`/...). Both sides are normalised
+(`{x}` and `${x}` become `{}`, query strings and a trailing slash are cut)
+and matched without the HTTP verb. Only `/api/...` and `/internal/...` paths
+are recorded. For relations no scan can see (a service and the Terraform that
+provisions it), list `:links [[from to] ...]` in the policy. Ids are written
+as in the diagram, and `prefix.*` expands to every class under that prefix.
+A link that matches nothing is reported on stderr. A TypeScript source entry
+also takes `:exclude ["docs-site" "e2e"]`, directories relative to its root
+that are not scanned (dot directories, `node_modules`, `dist` and `target`
+never are).
 
 **Python** (`uml-viewer.python-language.graph-python`) emits one class per
 `.py` module. `__init__.py` is the package. Point `:src` at the package

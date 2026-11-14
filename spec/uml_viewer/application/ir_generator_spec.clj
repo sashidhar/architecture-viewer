@@ -162,3 +162,11 @@
                                (.getPath out-f)))
       (should= "" (str err))
       (should= "" (str out)))))
+
+(describe "policy links"
+  (it "adds declared edges, expanding prefix.* and skipping unknown ids"
+    (let [graph {:classes [{:id :svc.a} {:id :svc.b} {:id :infra.ecs} {:id :aws :foreign true}]
+                 :edges [{:from :svc.a :to :svc.b :kind :dependency}]}
+          out (ir-generator/with-links {:links [["svc.*" "infra.ecs"] ["nope" "infra.ecs"]]} graph)]
+      (should= #{[:svc.a :svc.b] [:svc.a :infra.ecs] [:svc.b :infra.ecs]}
+               (set (map (juxt :from :to) (:edges out)))))))
