@@ -43,6 +43,95 @@ snapshots produced by [crap4clj](https://github.com/unclebob/crap4clj) and
 those files at load, keyed by namespace and function name. Agents edit the
 policy, not the IR. See [Policy](#policy).
 
+## Browser viewer
+
+The same IR, rendered as one HTML page in your browser. It needs only the Clojure
+CLI and Java: no Quil, no desktop session, no tmux, no companion agent. The page is
+**self-contained** (Cytoscape.js, ELK and the app are inlined), so it opens from
+`file://`, works offline, and can be emailed or attached to a ticket.
+
+### Run
+
+```bash
+clj -M:ir                                  # policy → IR (examples/uml-viewer.edn)
+clj -M:web examples/uml-viewer.edn         # IR → examples/uml-viewer.html, opened
+clj -M:web IR.edn --out page.html          # choose the output path
+clj -M:web IR.edn --no-open                # write the page, don't open it
+```
+
+The IR must be hierarchical (`:hierarchical true` in the policy). The page is
+written next to the IR unless `--out` says otherwise.
+
+To view another project without installing anything into it, point at a checkout
+of this repo:
+
+```bash
+DEPS='{:deps {uml-viewer/uml-viewer {:local/root "/path/to/uml-viewer"}}}'
+clojure -Sdeps "$DEPS" -M -m uml-viewer.main.ir-generator policy.edn ir.edn
+clojure -Sdeps "$DEPS" -M -m uml-viewer.main.web ir.edn --out ir.html
+```
+
+### Using the page
+
+| Do this | To get this |
+| --- | --- |
+| Double-click a group | Open or close it. Links roll up onto closed groups, labelled with a count. |
+| Click a node | Trace what it depends on (blue) and what depends on it (orange). The side panel lists its direct links; click one to jump there. |
+| Click a link | See the underlying dependencies behind a rolled-up link. |
+| Hover a node | Preview the same trace without selecting. |
+| `/` | Search modules. `Enter` jumps to the match and opens the groups above it. |
+| **Depth**, **Expand all**, **Collapse all** | Choose how much of the tree is open. `auto` opens groups while the picture stays legible. |
+| **Simplify links** | Hide `A→C` when `A→B→C` already exists. |
+| **Min links** | Hide links backed by fewer than N dependencies. `auto` keeps roughly 160 links on screen. |
+| **Hide external**, **Violations only**, **Direct links only** | Filter the view. |
+| **Top-down / Left-right**, **Fit** (`f`), **PNG**, `Esc` | Layout direction, zoom to fit, download an image, clear the selection. |
+
+Toggle settings are remembered per diagram title in the browser's local storage.
+
+### Reading it
+
+- **Bands.** Policy `:levels` become horizontal bands: the outermost level on top,
+  the innermost below it, external libraries last. Dependencies should point down.
+- **Red** links break the dependency rule (they run from an inner level to an outer
+  one). **Orange dashed** links are in a dependency cycle between conforming links.
+- **Violations and cycles are never hidden** by Simplify links or Min links. A hidden
+  link reappears, dotted, when you select either of its endpoints. The toolbar says
+  how many links are hidden and why.
+- **Rolled-up nodes** show `name ▸ N`, where N is the number of modules inside. An
+  open group shows `name ▾`.
+- A selection whose transitive trace would cover most of the graph shows direct links
+  only, and says so in the side panel.
+
+### Large graphs
+
+Graphs of more than 150 modules start as the top-level overview instead of opening
+groups automatically: open what you need by double-clicking. In testing, layouts for
+graphs of about 2,300 modules and 6,000 to 9,000 dependencies take well under a
+second to a few seconds per change. Very dense graphs (every package depending on
+almost every other) stay hard to read at overview zoom; raise **Min links**, hide
+external libraries, or open a single group.
+
+### Not in the browser viewer
+
+Proposals, the companion agent, and the CRAP / mutation metric overlay are desktop
+viewer features and are not available in the page (`clj -M:run` keeps them).
+
+### Development
+
+Source lives in `resources/web/`: `graph.js` holds the graph logic (tree, roll-up,
+cycle detection, simplification) and has no DOM dependency; `app.js` is the UI;
+`index.template.html` and `style.css` are inlined by
+`src/uml_viewer/application/web_export.clj`. Vendored libraries and licenses are in
+`resources/web/vendor/` (Cytoscape.js and cytoscape-elk are MIT, elkjs is EPL-2.0).
+
+```bash
+node --test test-js/graph.test.js          # graph logic
+clj -M:spec                                # includes the exporter specs
+```
+
+The layout leaves ELK's `considerModelOrder` option off on purpose: turning it on made
+layout of a dense graph about 40 times slower.
+
 ## Run
 
 Needs Clojure CLI and Java 21+.
