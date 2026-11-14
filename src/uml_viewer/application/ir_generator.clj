@@ -25,9 +25,10 @@
                  (throw (ex-info (str "no LanguageGraph for " lang) {:lang lang})))]
     (graph/scan impl
                 (or (:root source) (:src source) (:src policy) "src")
-                {:prefix (or (:prefix policy) "uml-viewer")
-                 :ns-prefix (or (:prefix source) (:prefix policy) "uml-viewer")
-                 :lang lang})))
+                (merge {:prefix (or (:prefix policy) "uml-viewer")
+                        :ns-prefix (or (:prefix source) (:prefix policy) "uml-viewer")
+                        :lang lang}
+                       (select-keys source [:strip :exclude :vars])))))
 
 (defn scan-policy
   "Scan `policy`. `:sources` merges one scanner per entry.

@@ -406,7 +406,7 @@ repo with Go under the root and Babashka scripts under `bb`:
 | `:omit-edges` | Drop `[from to]` |
 | `:lang` | Scanner when `:sources` is absent (default `:clojure`) |
 | `:src` | Source root when `:sources` is absent |
-| `:sources` | One scan per `{:lang :root :prefix?}`. The entry `:prefix` is that tree's namespace root |
+| `:sources` | One scan per `{:lang :root :prefix?}`. The entry `:prefix` is that tree's namespace root. Java also takes `:strip`, Terraform `:vars` |
 | `:foreign` | External libs as ovals. A listed prefix collapses `quil.core` to `quil`. Unlisted externals are dropped |
 
 **Viewer Grok loop** (passed with `--rules` to the companion session only)
@@ -612,6 +612,32 @@ unless they are `#[tauri::command]` functions, which are `:ops` even when
 private. `impl Trait for Type` is `:implements` when the trait resolves
 to a project module. The first segment of a `use`, other than `crate`,
 `self`, `super`, or the lib crate, is a foreign crate.
+
+**Java** (`uml-viewer.java-language.graph-java`) emits one class per `.java`
+file (its primary top-level type). The `package` declaration names the tree,
+not the directory, so several Gradle/Maven source roots can be scanned
+together (`:root` may be a vector of directories) and imports between them
+resolve. By default the longest package prefix shared by all files is
+stripped (`com.acme`); set `:strip` on the source entry to choose another.
+An import of a project class, a same-package reference, a wildcard-import
+reference and a fully qualified name are `:dependency`; `extends` is
+`:inheritance` (`:implements` for an interface); `implements` is
+`:implements`. An interface is `:stereotype :interface`. An import that is
+not a project class is foreign, named by its package
+(`org.springframework.web.bind.annotation`); list `:foreign` prefixes such
+as `org.springframework` to keep and collapse them. Comments, strings and
+text blocks are ignored. Test trees are skipped by pointing `:root` at
+`src/main/java`.
+
+**Terraform** (`uml-viewer.terraform-language.graph-terraform`) emits one
+class per `.tf` file; directories are the tree. A file depends on another
+when it references something that file declares: `aws_x.name`,
+`data.aws_x.name`, `module.name` or `local.name`. Declarations are the class
+`:ops`. `var.*` links are left out (`variables.tf` would touch everything);
+set `:vars true` on the source entry to include them. A resource type
+`aws_ecs_service` links its file to the foreign `aws.ecs`; list the
+`:foreign` prefixes you want to see (`aws.ecs`, `aws.s3`, or just `aws`).
+Comments and `description` strings are ignored.
 
 **Python** (`uml-viewer.python-language.graph-python`) emits one class per
 `.py` module. `__init__.py` is the package. Point `:src` at the package
