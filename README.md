@@ -43,6 +43,41 @@ snapshots produced by [crap4clj](https://github.com/unclebob/crap4clj) and
 those files at load, keyed by namespace and function name. Agents edit the
 policy, not the IR. See [Policy](#policy).
 
+## Browser viewer
+
+Same IR, rendered in a browser. It does not need Quil or a desktop session.
+
+```bash
+clj -M:ir                              # policy → IR (examples/uml-viewer.edn)
+clj -M:web examples/uml-viewer.edn     # IR → .html, opened in your browser
+clj -M:web IR.edn --out page.html --no-open
+```
+
+The output is **one self-contained HTML file** (Cytoscape.js, ELK, and the app
+are inlined), so it opens from `file://`, works offline, and can be shared.
+
+Built for large graphs:
+
+- **Collapsible namespace tree.** Double-click a group to open or close it.
+  Links roll up onto collapsed groups with a count. Graphs over 150 modules
+  start as the top-level overview; small ones open automatically.
+- **Architecture bands.** Policy `:levels` become horizontal bands (outermost
+  on top, innermost at the bottom, external libraries last). Dependency-rule
+  violations are red arrows that run against the bands.
+- **Simplify links.** Hides `A→C` when `A→B→C` exists, and thin links under a
+  "min links" threshold (`auto` picks one that keeps about 160 links on screen).
+  Violations and cycles are never hidden; select a node to see its hidden links.
+- **Trace.** Click a node to light up everything it depends on (blue) and
+  everything that depends on it (orange). When that would cover most of the
+  graph it falls back to direct links. Hover previews.
+- Search (`/`), cycle detection, depth control, left-right or top-down layout,
+  PNG export, light and dark themes.
+
+Source is in `resources/web/` (`graph.js` holds the logic and has no DOM
+dependency; `app.js` is the UI) and `src/uml_viewer/application/web_export.clj`.
+Run the JS tests with `node --test test-js/graph.test.js`. Vendored libraries
+and their licenses are in `resources/web/vendor/`.
+
 ## Run
 
 Needs Clojure CLI and Java 21+.
