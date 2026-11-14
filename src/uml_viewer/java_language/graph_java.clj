@@ -41,8 +41,10 @@
 
 (defn mask
   "`source` with comments, string literals and char literals blanked
-  (newlines kept), so that code patterns cannot match inside them."
-  [^String source]
+  (newlines kept), so that code patterns cannot match inside them. With
+  `keep-strings?` string literals stay and only comments are blanked."
+  ([source] (mask source false))
+  ([^String source keep-strings?]
   (let [n (count source)
         sb (StringBuilder.)]
     (loop [i 0]
@@ -64,10 +66,13 @@
 
             (or (= c \") (= c \'))
             (recur (let [e (graph/scan-quoted source i c n)]
-                     (blank sb source i e) e))
+                     (if keep-strings?
+                       (.append sb (subs source i e))
+                       (blank sb source i e))
+                     e))
 
             :else (do (.append sb c) (recur (inc i)))))))
-    (str sb)))
+    (str sb))))
 
 ;; ---------------------------------------------------------------- reading one file
 
@@ -141,6 +146,88 @@
          :extends (vec (header-clause header "extends" ["implements" "permits"]))
          :implements (vec (header-clause header "implements" ["extends" "permits"]))
          :body body}))))
+
+;; ---------------------------------------------------------------- Spring routes
+
+(def ^:private mapping-re
+  #"@(RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\b")
+
+(defn- annotation-args
+  "Text between the parentheses that open at `open`, and the index after them."
+  [^String text open]
+  (let [n (count text)]
+    (loop [i open depth 0 in-string? false]
+      (if (>= i n)
+        [(subs text (inc open)) n]
+        (let [c (.charAt text i)]
+          (cond
+            (and in-string? (= c \\)) (recur (+ i 2) depth true)
+            (= c \") (recur (inc i) depth (not in-string?))
+            in-string? (recur (inc i) depth true)
+            (= c \() (recur (inc i) (inc depth) false)
+            (= c \)) (if (= depth 1)
+                       [(subs text (inc open) i) (inc i)]
+                       (recur (inc i) (dec depth) false))
+            :else (recur (inc i) depth false)))))))
+
+(defn- split-top-level
+  "`s` split on commas that are not inside (), {} or a string."
+  [^String s]
+  (loop [i 0 depth 0 in-string? false start 0 out []]
+    (if (>= i (count s))
+      (conj out (subs s start))
+      (let [c (.charAt s i)]
+        (cond
+          (and in-string? (= c \\)) (recur (+ i 2) depth true start out)
+          (= c \") (recur (inc i) depth (not in-string?) start out)
+          in-string? (recur (inc i) depth true start out)
+          (#{\( \{} c) (recur (inc i) (inc depth) false start out)
+          (#{\) \}} c) (recur (inc i) (dec depth) false start out)
+          (and (= c \,) (zero? depth)) (recur (inc i) depth false (inc i) (conj out (subs s start i)))
+          :else (recur (inc i) depth false start out))))))
+
+(defn- literals [s]
+  (mapv second (re-seq #"\"((?:[^\"\\]|\\.)*)\"" s)))
+
+(defn- mapping-paths
+  "Path literals of a mapping annotation's `args` (`value`, `path` or the
+  unnamed first argument). [\"\"] when it has none."
+  [args]
+  (let [params (split-top-level (or args ""))
+        paths (vec (mapcat (fn [i p]
+                             (if-let [[_ rest] (re-find #"^\s*(?:value|path)\s*=\s*(?s)(.*)" p)]
+                               (literals rest)
+                               (when (and (zero? i) (not (re-find #"^\s*\w+\s*=" p)))
+                                 (literals p))))
+                           (range) params))]
+    (if (seq paths) paths [""])))
+
+(defn routes-of
+  "Normalised HTTP routes a Spring controller serves: class-level
+  `@RequestMapping` paths joined with each method-level mapping."
+  [source]
+  (let [text (mask source true)
+        type-at (let [m (re-matcher type-re text)] (if (.find m) (.start m) (count text)))
+        m (re-matcher mapping-re text)
+        found (loop [acc []]
+                (if (.find m)
+                  (let [after (.end m)
+                        k (loop [k after]
+                            (if (and (< k (count text)) (Character/isWhitespace (.charAt text k)))
+                              (recur (inc k))
+                              k))
+                        args (when (and (< k (count text)) (= \( (.charAt text k)))
+                               (first (annotation-args text k)))]
+                    (recur (conj acc {:name (.group m 1) :at (.start m) :paths (mapping-paths args)})))
+                  acc))
+        class-paths (or (some #(when (and (= "RequestMapping" (:name %)) (< (:at %) type-at))
+                                 (:paths %))
+                              found)
+                        [""])
+        methods (filter #(> (:at %) type-at) found)]
+    (->> (for [mth methods c class-paths p (:paths mth)]
+           (graph/normalize-route (str c p)))
+         (remove nil?) distinct vec)))
 
 ;; ---------------------------------------------------------------- resolution
 
@@ -232,6 +319,7 @@
         parsed (read-source source (.getName ^java.io.File file))]
     (when (and parsed (:package parsed))
       (assoc parsed
+        :routes (routes-of source)
         :fqn (str (:package parsed) "." (:name parsed))
         :file file))))
 
@@ -289,6 +377,8 @@
                               parsed)
                         (map #(graph/foreign-class (keyword %)) foreign-ids))]
       {:classes classes
+       :commands (into {} (keep (fn [p] (when (seq (:routes p)) [(id-of p) (:routes p)])))
+                       parsed)
        :edges (->> edges
                    (map #(dissoc % :foreign))
                    (remove #(= (:from %) (:to %)))

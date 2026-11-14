@@ -116,3 +116,14 @@
       (should (contains? edges [:application.document :engine.compose :dependency]))
       (should (:foreign (by-id :quil.core)))
       (should (contains? edges [:adapters.draw :quil.core :dependency])))))
+
+(describe "normalize-route"
+  (it "makes template and spring routes comparable"
+    (should= "/api/p/{}/git" (graph/normalize-route "/api/p/${encodeURIComponent(id)}/git${suffix}"))
+    (should= "/api/p/{}" (graph/normalize-route "/api/p/{projectId}/?a=1"))
+    (should= nil (graph/normalize-route "")))
+  (it "links one command name to every owner"
+    (let [g (graph/merge-scans [{:classes [{:id :a}] :commands {:a ["/x"]}}
+                                {:classes [{:id :b}] :commands {:b ["/x"]}}
+                                {:classes [{:id :c}] :invokes {:c ["/x"]}}])]
+      (should= #{[:c :a] [:c :b]} (set (map (juxt :from :to) (:edges g)))))))

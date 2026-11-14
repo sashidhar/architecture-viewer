@@ -110,4 +110,17 @@
             c (first (:classes g))]
         (should= :editor.view (:id c))
         (should= "View" (:name c))
-        (should= "bookwriter.editor.view" (:ns c))))))
+        (should= "bookwriter.editor.view" (:ns c)))))
+
+  (it "skips dot directories and listed exclude directories"
+    (let [dir (temp-root)]
+      (spit-file dir "src/keep.ts" "export const a = 1;\n")
+      (spit-file dir "src/.next/chunk.js" "export const b = 1;\n")
+      (spit-file dir "src/e2e/flow.ts" "export const c = 1;\n")
+      (let [g (graph/scan (graph/lookup :typescript) (io/file dir "src") {:prefix "app" :exclude ["e2e"]})]
+        (should= [:keep] (map :id (:classes g))))))
+
+  (it "records /api route strings as invokes"
+    (let [surface (ts/read-module
+                    "const u = `/api/projects/${id}/git${suffix}`; fetch(`${BASE}/api/flavors?x=1`); const s = '/other';")]
+      (should= ["/api/projects/{}/git" "/api/flavors"] (:invokes surface)))))
