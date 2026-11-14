@@ -7,6 +7,7 @@
   {:domain 0 :source 0 :graph 0
    :clojure-language 0 :typescript-language 0 :rust-language 0
    :python-language 0 :go-language 0
+   :java-language 0 :terraform-language 0
    :engine 1
    :application 2
    :adapters 3
@@ -112,5 +113,7 @@
                                           'uml-viewer.python-language.source-python
                                           'uml-viewer.python-language.graph-python
                                           'uml-viewer.go-language.source-go
-                                          'uml-viewer.go-language.graph-go}
+                                          'uml-viewer.go-language.graph-go
+                                          'uml-viewer.java-language.graph-java
+                                          'uml-viewer.terraform-language.graph-terraform}
                                         %)))))

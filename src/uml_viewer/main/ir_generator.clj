@@ -2,9 +2,11 @@
   (:require [uml-viewer.application.ir-generator :as ir-generator]
             [uml-viewer.clojure-language.graph-clojure]
             [uml-viewer.go-language.graph-go]
+            [uml-viewer.java-language.graph-java]
             [uml-viewer.graph :as graph]
             [uml-viewer.python-language.graph-python]
             [uml-viewer.rust-language.graph-rust]
+            [uml-viewer.terraform-language.graph-terraform]
             [uml-viewer.typescript-language.graph-typescript])
   (:gen-class))
 
