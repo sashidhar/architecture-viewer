@@ -1,4 +1,9 @@
-# UML viewer
+# Architecture viewer
+
+A fork of [unclebob/uml-viewer](https://github.com/unclebob/uml-viewer), renamed
+because it now also renders dependency architectures in the browser. Internal
+namespaces keep the upstream `uml-viewer` name so upstream changes merge cleanly.
+
 ## Abstract
 
 This project displays a project as UML. The UML is *dynamic*. You can click
