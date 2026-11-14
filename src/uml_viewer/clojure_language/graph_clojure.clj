@@ -11,14 +11,49 @@
        (filter #(re-find #"\.clj[cs]?$" (.getName %)))
        (sort-by #(.getPath %))))
 
-(defn- read-forms [file]
-  (with-open [r (PushbackReader. (io/reader file))]
-    (binding [*read-eval* false]
-      (loop [forms []]
-        (let [form (read {:eof ::eof :read-cond :allow :features #{:clj}} r)]
-          (if (= form ::eof)
-            forms
-            (recur (conj forms form))))))))
+(defn- require-aliases
+  "Alias->lib pairs from the :require clauses of an ns form, including prefix lists."
+  [ns-form]
+  (letfn [(from-spec [prefix spec]
+            (cond
+              (and (vector? spec) (symbol? (first spec)))
+              (let [lib (if prefix (symbol (str prefix "." (first spec))) (first spec))
+                    opts (apply hash-map (rest spec))
+                    alias-sym (or (:as opts) (:as-alias opts))]
+                (when alias-sym [[alias-sym lib]]))
+              :else nil))
+          (from-clause [clause]
+            (mapcat (fn [spec]
+                      (if (and (vector? spec) (symbol? (first spec))
+                               (every? #(or (vector? %) (symbol? %)) (rest spec))
+                               (some vector? (rest spec)))
+                        (mapcat #(from-spec (first spec) %) (filter vector? (rest spec)))
+                        (from-spec nil spec)))
+                    (rest clause)))]
+    (->> (drop 2 ns-form)
+         (filter #(and (seq? %) (= :require (first %))))
+         (mapcat from-clause))))
+
+(defn- read-forms
+  "Reads every form in file. ::alias/kw and ::kw resolve against a scratch
+  namespace carrying the file's ns aliases, so the plain reader never throws."
+  [file]
+  (let [scratch (create-ns (gensym "uml-viewer.scratch"))]
+    (try
+      (with-open [r (PushbackReader. (io/reader file))]
+        (binding [*read-eval* false
+                  *ns* scratch]
+          (loop [forms []]
+            (let [form (read {:eof ::eof :read-cond :allow :features #{:clj}} r)]
+              (cond
+                (= form ::eof) forms
+                :else
+                (do (when (and (seq? form) (= 'ns (first form)))
+                      (doseq [[a lib] (require-aliases form)]
+                        (create-ns lib)
+                        (.addAlias ^clojure.lang.Namespace scratch a (the-ns lib))))
+                    (recur (conj forms form))))))))
+      (finally (remove-ns (ns-name scratch))))))
 
 (defn- ns-form [forms]
   (first (filter #(and (seq? %) (= 'ns (first %))) forms)))
