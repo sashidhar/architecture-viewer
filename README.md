@@ -562,6 +562,51 @@ does not contain the command. If Grok is busy, it finishes first, then reads
 the mailbox. If tmux is missing, the button still writes the file and the
 inspector says the session is not attached.
 
+## Component diagram (Mermaid)
+
+The same scan, rolled up into named components and the systems around them,
+as a Mermaid flowchart. Use it for a one-page picture (API, Billing, Compute,
+Postgres, AWS, Paddle) instead of a class graph.
+
+```bash
+clojure -M -m uml-viewer.main.components POLICY.edn \
+  --out diagram.mmd --html diagram.html
+```
+
+`.mmd` pastes into GitHub, Notion or any Mermaid renderer. The `.html` loads
+Mermaid from a CDN (jsdelivr, pinned) so it needs a network connection.
+
+Add `:components` and `:systems` to the policy (the policy may also carry
+`:sources` as usual):
+
+```edn
+{:min-weight 2                       ; drop component links backed by < 2 class dependencies
+ :components
+ [{:id :billing :name "Billing" :group "Backend"
+   :match ["backend.service.billing.*" "backend.billing.*"]}
+  {:id :persistence :name "Persistence" :group "Backend"
+   :match ["backend.entity.*" "backend.repository.*"]}]
+ :systems
+ [{:id :postgres :name "PostgreSQL" :kind :database :group "Data"
+   :via ["jakarta.persistence" "org.hibernate"]}
+  {:id :paddle :name "Paddle" :kind :external :group "Data"
+   :via ["backend.infrastructure.paddle.*"]}]}
+```
+
+- A class belongs to the **first** component whose `:match` fits. A pattern is a
+  class id or a package prefix (`prefix.*` and `prefix` are the same); put
+  specific components before catch-alls. Classes no component claims are
+  listed on stderr.
+- A component **uses** a system when one of its classes depends on something a
+  `:via` pattern fits: a foreign package (`jakarta.persistence`,
+  `software.amazon.awssdk.services.s3`) or a project class. A project class
+  matched by `:via` belongs to the system and to no component, so an adapter
+  package shows as the external service it talks to.
+- `:kind` picks the shape: `:database` cylinder, `:queue` flag, else rounded.
+  `:group` draws a labelled box; components and systems without one sit at
+  the top.
+- A link's number is how many class-level dependencies back it.
+
 ## Language graphs
 
 Generating the IR asks `uml-viewer.graph` to scan a source tree. `:lang`
